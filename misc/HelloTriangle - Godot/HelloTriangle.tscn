@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3 uid="uid://dn00wrxcly0he"]
+
+[ext_resource type="Script" uid="uid://8eosjcjjt7lr" path="res://HelloTriangle.gd" id="1_iaitu"]
+[ext_resource type="Shader" uid="uid://bj0q2x4784g3k" path="res://HelloTriangle.gdshader" id="2_gkta8"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_iaitu"]
+render_priority = 0
+shader = ExtResource("2_gkta8")
+
+[node name="Node3D" type="Node3D"]
+script = ExtResource("1_iaitu")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+material_override = SubResource("ShaderMaterial_iaitu")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.8334036)
