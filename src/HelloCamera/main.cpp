@@ -61,6 +61,7 @@ void main()
 )glsl";
 
 bool rotateX=false, rotateY=false, rotateZ=false;
+bool perspective = true; //começa com projeção perspectiva
 
 // Função MAIN
 int main()
@@ -134,7 +135,7 @@ int main()
     glUniformMatrix4fv(glGetUniformLocation(shaderID, "view"), 1, GL_FALSE, glm::value_ptr(view));
     
     glEnable(GL_DEPTH_TEST);
-    bool perpective = true; //começa com projeção perspectiva
+    
 
 	// Loop da aplicação - "game loop"
 	while (!glfwWindowShouldClose(window))
@@ -152,12 +153,9 @@ int main()
 		glPointSize(10);
 
         // ----------
-         if (glfwGetKey(window, GLFW_KEY_P))
-         {
-            perpective = !perpective;
-         }
-
-         if (perpective)
+         
+         
+         if (perspective)
          {
             projection = glm::perspective(glm::radians(45.0f),(float)WIDTH/(float)HEIGHT,0.1f,100.0f);
             glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
@@ -168,34 +166,35 @@ int main()
             projection = glm::ortho(-3.0, 3.0, -3.0, 3.0, 0.1, 100.0);
             glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
          }
+        
 
 
-        if (glfwGetKey(window, GLFW_KEY_1))
+        if (glfwGetKey(window, GLFW_KEY_1)==GLFW_PRESS)
         {
             //Visualização de frente
             view = glm::lookAt(glm::vec3(0,0,-3), glm::vec3(0,0,0), glm::vec3(0,1,0));
         }
-        else if (glfwGetKey(window, GLFW_KEY_2))
+        else if (glfwGetKey(window, GLFW_KEY_2)==GLFW_PRESS)
         {
             //Visualização de costas
             view = glm::lookAt(glm::vec3(0,0,3), glm::vec3(0,0,0), glm::vec3(0,1,0));
         }
-        else if (glfwGetKey(window, GLFW_KEY_3))
+        else if (glfwGetKey(window, GLFW_KEY_3)==GLFW_PRESS)
         {
             //Visualização da esquerda
             view = glm::lookAt(glm::vec3(-3,0,0), glm::vec3(0,0,0), glm::vec3(0,1,0));
         }
-        else if (glfwGetKey(window, GLFW_KEY_4))
+        else if (glfwGetKey(window, GLFW_KEY_4)==GLFW_PRESS)
         {
             //Visualização da direita
             view = glm::lookAt(glm::vec3(3,0,0), glm::vec3(0,0,0), glm::vec3(0,1,0));
         }
-        else if (glfwGetKey(window, GLFW_KEY_5))
+        else if (glfwGetKey(window, GLFW_KEY_5)==GLFW_PRESS)
         {
             //Visualização de cima
             view = glm::lookAt(glm::vec3(0,3,0), glm::vec3(0,0,0), glm::vec3(0,0,1));
         }
-        else if (glfwGetKey(window, GLFW_KEY_6))
+        else if (glfwGetKey(window, GLFW_KEY_6)==GLFW_PRESS)
         {
             //Visualização debaixo
             view = glm::lookAt(glm::vec3(0,-3,0), glm::vec3(0,0,0), glm::vec3(0,0,1));
@@ -273,6 +272,11 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 		rotateY = false;
 		rotateZ = true;
 	}
+
+    if (key == GLFW_KEY_P && action == GLFW_PRESS)
+         {
+            perspective = !perspective;
+         }
 
 
 

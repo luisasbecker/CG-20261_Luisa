@@ -9,7 +9,7 @@ Objetivo: Revisar as vistas técnicas e introduzir a Matriz de Visualização (`
 
 **Configuração:** O objeto está na origem `(0,0,0)`. Como nosso eixo Z cresce para trás do objeto, posicionaremos a câmera em `(0, 0, -3)` para olharmos de frente para ele.
 
-![SistemaCartesiano](image.png)
+<img src= "image.png" width="300px" align="center" alt="Sistema de Coordenadas do Mundo">
 
 > **1. A Matriz de Projeção (Ortográfica):**
 > Note que agora os planos de corte Z (`near` e `far`) precisam acomodar a distância da nossa câmera.
