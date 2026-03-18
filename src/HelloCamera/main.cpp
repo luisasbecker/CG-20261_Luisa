@@ -18,11 +18,13 @@ using namespace std;
 // GLFW
 #include <GLFW/glfw3.h>
 
-//GLM
+// GLM
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// Camera
+#include "Camera.h"
 
 // Protótipo da função de callback de teclado
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -62,6 +64,11 @@ void main()
 
 bool rotateX=false, rotateY=false, rotateZ=false;
 bool perspective = true; //começa com projeção perspectiva
+
+//Instanciação da Camera
+Camera camera(glm::vec3(0.0, 0.0, -3.0), glm::vec3(0.0,1.0,0.0),90.0,0.0);
+float deltaTime = 0.0;
+float lastFrame = 0.0; 
 
 // Função MAIN
 int main()
@@ -140,6 +147,11 @@ int main()
 	// Loop da aplicação - "game loop"
 	while (!glfwWindowShouldClose(window))
 	{
+		// Controle do tempo entre frames
+		float currentFrame = glfwGetTime();
+		deltaTime = currentFrame - lastFrame;
+		lastFrame = currentFrame;
+
 		// Checa se houveram eventos de input (key pressed, mouse moved etc.) e chama as funções de callback correspondentes
 		glfwPollEvents();
 
@@ -166,9 +178,12 @@ int main()
             projection = glm::ortho(-3.0, 3.0, -3.0, 3.0, 0.1, 100.0);
             glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
          }
+
+		 if(glfwGetKey(window,GLFW_KEY_W) == GLFW_PRESS) camera.processKeyboard("FORWARD",deltaTime);
+		 if(glfwGetKey(window,GLFW_KEY_S) == GLFW_PRESS) camera.processKeyboard("BACKWARD",deltaTime);
+		 if(glfwGetKey(window,GLFW_KEY_A) == GLFW_PRESS) camera.processKeyboard("LEFT",deltaTime);
+		 if(glfwGetKey(window,GLFW_KEY_D) == GLFW_PRESS) camera.processKeyboard("RIGHT",deltaTime);
         
-
-
         if (glfwGetKey(window, GLFW_KEY_1)==GLFW_PRESS)
         {
             //Visualização de frente
@@ -223,15 +238,16 @@ int main()
 		}
 
 		glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(model));
-		// Poligono Preenchido - GL_TRIANGLES
 		
+		// Atualização da matriz de view de acordo com as mudanças que ela sofreu via input
+		// de mouse e/ou teclado
+		view = camera.getViewMatrix();
+		glUniformMatrix4fv(glGetUniformLocation(shaderID, "view"), 1, GL_FALSE, glm::value_ptr(view));
+
+		// Chamada de Desenho - DRAWCALL
+		// Poligono Preenchido - GL_TRIANGLES
 		glBindVertexArray(VAO);
 		glDrawArrays(GL_TRIANGLES, 0, 18);
-
-		// Chamada de desenho - drawcall
-		// CONTORNO - GL_LINE_LOOP
-		
-		glDrawArrays(GL_POINTS, 0, 18);
 		glBindVertexArray(0);
 
 		// Troca os buffers da tela
