@@ -1,4 +1,4 @@
-# 📄 Leitor de Arquivo Wavefront .OBJ em C++
+# Leitor de Arquivo Wavefront .OBJ em C++
 
 Esta documentação descreve a função `loadSimpleOBJ`, que lê arquivos no formato **Wavefront .OBJ**, recupera **vértices, coordenadas de textura e normais**, e os organiza em um **Vertex Buffer Object (VBO) e Vertex Array Object (VAO)** para uso no OpenGL.
 
@@ -33,7 +33,7 @@ glDrawArrays(GL_TRIANGLES, 0, nVertices);
 
 ---
 
-## 🔍 **Passo a Passo do Código**
+## **Passo a Passo do Código**
 
 ### **1. Declaração de Estruturas de Dados**
 
@@ -118,7 +118,7 @@ return -1;
 
 ---
 
-## ✅ **Resumo do Código**
+## **Resumo do Código**
 
 - **Abre e lê o arquivo .OBJ**, processando as linhas com informações das coordenadas dos vértices, texturas e normais.
 - **Processa a informação das faces** (triângulos), recuperando os índices (de vértice, coord de texturas e normais) - usa por enquanto apenas o índice dos vértices para montar o buffer
@@ -129,12 +129,12 @@ return -1;
 
 ---
 
-## 🎯 **Próximos Passos**
+## **Próximos Passos**
 📌 Incluir os atributos **coordenadas de textura** e **componentes do vetor normal** ao **VAO**.  
 📌 Implementar **carga de materiais (.MTL) para atribuir cores e texturas** (Módulo 3).
 
 
-## 📚 Referências
+## Referências
 
 - [`std::vector`](https://cplusplus.com/reference/vector/vector/) - Estrutura de dados dinâmica utilizada para armazenar vértices, texturas e normais.  
 - [`std::fstream`](https://cplusplus.com/reference/fstream/fstream/) - Manipulação de arquivos para leitura do `.OBJ`.  
