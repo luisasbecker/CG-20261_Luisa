@@ -40,7 +40,7 @@ include_directories(${CMAKE_SOURCE_DIR}/common)
 include_directories(${CMAKE_SOURCE_DIR}/include/glad)
 include_directories(${glm_SOURCE_DIR})
 include_directories(${stb_image_SOURCE_DIR})
-
+include_directories(${CMAKE_SOURCE_DIR}/include/glad/KHR)
 
 # Lista de pastas dos projetos (devem corresponder aos nomes dos diretórios dentro de src/)
 set(EXERCISES
@@ -48,6 +48,7 @@ set(EXERCISES
     HelloCamera
     HelloOBJ
     HelloPhong
+    EX2__Luisa_Becker
     # TrabalhoGrauA
 )
 
