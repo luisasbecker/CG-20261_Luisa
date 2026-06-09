@@ -1,22 +1,12 @@
-/*
- * Exercicio Grau B - Environment Mapping com Cube Mapping
- * Luisa Becker
- *
- * Baseado no exemplo HelloCubemap do repositorio CG-20261.
- *
- * Alteracoes principais:
- * - Skybox renderizado como fundo da cena usando o cubemap de src/HelloCubemap/skybox.
- * - Objeto com reflexao de ambiente usando reflect(I, N).
- * - Mistura entre Phong e Cubemap usando mix(corPhong, corSkybox, reflectivity).
- * - W/A/S/D movem a camera.
- * - Setas rotacionam o objeto apenas enquanto pressionadas.
+/* 
+ * Exercício Skybox 
+ * Luisa Becker dos Santos
  */
 
-#include <algorithm>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
+#include <fstream>
+#include <sstream>
 #include <vector>
 
 using namespace std;
@@ -39,22 +29,22 @@ using namespace std;
 // Camera
 #include "Camera.h"
 
-// Prototipos
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
-GLuint setupShader(const GLchar* vshader, const GLchar* fshader);
-GLuint loadSimpleOBJ(string filePath, int& nVertices);
-GLuint loadTexture(string filePath, int& imgWidth, int& imgHeight);
+// Protótipos
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
+
+int setupShader(const GLchar *vshader, const GLchar *fshader);
+
+GLuint loadSimpleOBJ(string filePATH, int &nVertices);
+GLuint loadTexture(string filePath, int &imgWidth, int &imgHeight);
 GLuint loadCubemap(vector<string> faces);
 GLuint setupCubemap(float scaleFactor);
 
-bool fileExists(const string& filePath);
-string findResource(const string& relativePath);
-
-// Dimensoes da janela
-const GLuint WIDTH = 600, HEIGHT = 600;
+// Dimensões da janela
+const GLuint WIDTH = 600;
+const GLuint HEIGHT = 600;
 
 // Vertex Shader do objeto
-const GLchar* vertexShaderSource = R"glsl(
+const GLchar *vertexShaderSource = R"glsl(
 #version 450
 
 layout (location = 0) in vec3 position;
@@ -68,95 +58,89 @@ uniform mat4 view;
 
 out vec4 finalColor;
 out vec3 fragPos;
-out vec3 worldNormal;
+out vec3 scaledNormal;
 out vec2 texcoord;
 
 void main()
 {
-    vec4 worldPosition = model * vec4(position, 1.0);
-
-    gl_Position = projection * view * worldPosition;
+    gl_Position = projection * view * model * vec4(position, 1.0);
 
     finalColor = vec4(color, 1.0);
-    fragPos = vec3(worldPosition);
+    fragPos = vec3(model * vec4(position, 1.0));
 
-    // Transformacao correta da normal em coordenadas de mundo.
-    worldNormal = mat3(transpose(inverse(model))) * normal;
+    mat3 normalMatrix = mat3(transpose(inverse(model)));
+    scaledNormal = normalMatrix * normal;
 
     texcoord = vec2(texc.s, 1.0 - texc.t);
 }
 )glsl";
 
-// Fragment Shader do objeto
-const GLchar* fragmentShaderSource = R"glsl(
+// Fragment Shader do objeto: Phong + reflexão da skybox
+const GLchar *fragmentShaderSource = R"glsl(
 #version 450
 
 in vec4 finalColor;
 in vec3 fragPos;
-in vec3 worldNormal;
+in vec3 scaledNormal;
 in vec2 texcoord;
 
 uniform sampler2D texBuffer;
 uniform samplerCube skybox;
 
-// Propriedades do material
+// Propriedades da superfície/material
 uniform float ka;
 uniform float kd;
 uniform float ks;
 uniform float q;
 uniform float reflectivity;
 
-// Luz
+// Propriedades da fonte de luz
 uniform vec3 lightPos;
 uniform vec3 lightColor;
 
-// Camera
+// Posição da câmera
 uniform vec3 cameraPos;
 
 out vec4 color;
 
 void main()
 {
-    vec3 N = normalize(worldNormal);
+    vec3 N = normalize(scaledNormal);
     vec3 L = normalize(lightPos - fragPos);
     vec3 V = normalize(cameraPos - fragPos);
 
-    // Iluminacao local Phong
+    // Textura base do objeto
+    vec4 texColor = texture(texBuffer, texcoord);
+
+    // Phong: ambiente
     vec3 ambient = ka * lightColor;
 
+    // Phong: difusa
     float diff = max(dot(N, L), 0.0);
     vec3 diffuse = kd * diff * lightColor;
 
-    vec3 Rlocal = reflect(-L, N);
-    float spec = 0.0;
-
-    if (diff > 0.0)
-    {
-        spec = pow(max(dot(V, Rlocal), 0.0), q);
-    }
-
+    // Phong: especular
+    vec3 Rspec = reflect(-L, N);
+    float spec = pow(max(dot(V, Rspec), 0.0), q);
     vec3 specular = ks * spec * lightColor;
 
-    vec4 texColor = texture(texBuffer, texcoord) * finalColor;
-    vec3 corPhong = (ambient + diffuse) * texColor.rgb + specular;
+    vec3 phongColor = (ambient + diffuse + specular) * texColor.rgb;
 
-    // Reflexao de ambiente:
-    // I aponta da camera para o fragmento.
-    // R e o vetor refletido usado para amostrar o samplerCube.
+    // Reflexão de ambiente usando a skybox
+    // I aponta da câmera para o fragmento.
     vec3 I = normalize(fragPos - cameraPos);
     vec3 R = reflect(I, N);
-    vec3 corSkybox = texture(skybox, R).rgb;
+    vec3 skyColor = texture(skybox, R).rgb;
 
-    float fator = clamp(reflectivity, 0.0, 1.0);
+    float fatorReflexao = clamp(reflectivity, 0.0, 1.0);
+    vec3 mixedColor = mix(phongColor, skyColor, fatorReflexao);
 
-    vec3 corFinal = mix(corPhong, corSkybox, fator);
-
-    color = vec4(corFinal, texColor.a);
+    color = vec4(mixedColor, texColor.a);
 }
 )glsl";
 
-// Vertex Shader do Skybox
-const GLchar* vShaderSkybox = R"glsl(
+// Vertex Shader da skybox
+const GLchar *vShaderSkybox = R"glsl(
 #version 450
 
 layout (location = 0) in vec3 aPos;
@@ -170,22 +154,25 @@ void main()
 {
     TexCoords = aPos;
 
-    vec4 pos = projection * view * vec4(aPos, 1.0);
+    // Remove a translação da view para que a skybox pareça infinitamente distante.
+    mat4 viewNoTranslation = mat4(mat3(view));
 
-    // Mantem o skybox no fundo da cena.
+    vec4 pos = projection * viewNoTranslation * vec4(aPos, 1.0);
+
+    // Mantém a skybox no fundo do depth buffer.
     gl_Position = pos.xyww;
 }
 )glsl";
 
-// Fragment Shader do Skybox
-const GLchar* fShaderSkybox = R"glsl(
+// Fragment Shader da skybox
+const GLchar *fShaderSkybox = R"glsl(
 #version 450
-
-out vec4 FragColor;
 
 in vec3 TexCoords;
 
 uniform samplerCube skybox;
+
+out vec4 FragColor;
 
 void main()
 {
@@ -193,28 +180,30 @@ void main()
 }
 )glsl";
 
-// Estado global
 bool perspective = true;
 
-// Refletividade inicial menor para nao deixar a cena escura demais.
-// Pode ser ajustada com [ ] em tempo de execucao.
-float reflectivity = 0.35f;
+// Ângulos acumulados de rotação do objeto.
+// A rotação só aumenta enquanto a tecla do eixo estiver pressionada.
+float objectRotationX = 0.0f;
+float objectRotationY = 0.0f;
+float objectRotationZ = 0.0f;
 
-// Rotacao acumulada do objeto.
-// As setas alteram estes valores apenas enquanto pressionadas.
-float rotationX = 0.0f;
-float rotationY = 0.0f;
+// Velocidade da rotação em graus por segundo
+const float OBJECT_ROTATION_SPEED = 90.0f;
 
-// Camera
-Camera camera(
-    glm::vec3(0.0f, 0.0f, -3.0f),
-    glm::vec3(0.0f, 1.0f, 0.0f),
-    90.0f,
-    0.0f
-);
+// Câmera
+Camera camera(glm::vec3(0.0f, 0.0f, -3.0f),
+              glm::vec3(0.0f, 1.0f, 0.0f),
+              90.0f,
+              0.0f);
 
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
+
+// Fator de mistura entre Phong e reflexão da skybox.
+// 0.0 = somente Phong
+// 1.0 = somente reflexão da skybox
+float reflectivity = 0.55f;
 
 struct Mesh
 {
@@ -225,22 +214,14 @@ struct Mesh
 
 int main()
 {
+    // Inicialização da GLFW
     glfwInit();
 
-    // Mantenha estas linhas comentadas se seu ambiente nao aceitar OpenGL 4.5 diretamente.
-    // glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    // glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-    // glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    GLFWwindow *window = glfwCreateWindow(WIDTH, HEIGHT, "Skybox - Luisa Becker", nullptr, nullptr);
 
-#ifdef __APPLE__
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#endif
-
-    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Skybox - Luisa Becker", nullptr, nullptr);
-
-    if (!window)
+    if (window == nullptr)
     {
-        cout << "Falha ao criar janela GLFW" << endl;
+        cout << "Falha ao criar a janela GLFW" << endl;
         glfwTerminate();
         return -1;
     }
@@ -248,308 +229,222 @@ int main()
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
 
+    // GLAD
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
         cout << "Failed to initialize GLAD" << endl;
+        glfwTerminate();
         return -1;
     }
 
-    const GLubyte* renderer = glGetString(GL_RENDERER);
-    const GLubyte* version = glGetString(GL_VERSION);
+    // Informações de versão
+    const GLubyte *renderer = glGetString(GL_RENDERER);
+    const GLubyte *version = glGetString(GL_VERSION);
 
     cout << "Renderer: " << renderer << endl;
     cout << "OpenGL version supported: " << version << endl;
 
-    int width, height;
+    int width;
+    int height;
     glfwGetFramebufferSize(window, &width, &height);
     glViewport(0, 0, width, height);
 
     glEnable(GL_DEPTH_TEST);
 
+    // Shaders
     GLuint shaderID = setupShader(vertexShaderSource, fragmentShaderSource);
     GLuint skyboxShaderID = setupShader(vShaderSkybox, fShaderSkybox);
 
-    Mesh mesh;
+    // Matriz de projeção inicial
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f),
+                                            (float)WIDTH / (float)HEIGHT,
+                                            0.1f,
+                                            100.0f);
 
-    mesh.VAO = loadSimpleOBJ(
-        findResource("assets/Modelos3D/SuzanneSubdiv1.obj"),
-        mesh.nVertices
-    );
+    // Matriz de modelo inicial
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-    int imgWidth, imgHeight;
+    // Malha do objeto
+    Mesh m;
+    m.VAO = loadSimpleOBJ("../assets/Modelos3D/SuzanneSubdiv1.obj", m.nVertices);
 
-    mesh.texID = loadTexture(
-        findResource("src/HelloCubemap/Suzanne.png"),
-        imgWidth,
-        imgHeight
-    );
+    if (m.VAO == 0 || m.nVertices == 0)
+    {
+        cout << "Erro ao carregar o modelo 3D." << endl;
+        glfwTerminate();
+        return -1;
+    }
 
+    // Textura da Suzanne
+    int imgWidth;
+    int imgHeight;
+    m.texID = loadTexture("../src/HelloCubemap/Suzanne.png", imgWidth, imgHeight);
+
+    if (m.texID == 0)
+    {
+        cout << "Erro ao carregar a textura da Suzanne." << endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    // Cubemap/skybox
     vector<string> faces = {
-        findResource("src/HelloCubemap/skybox/right.jpg"),
-        findResource("src/HelloCubemap/skybox/left.jpg"),
-        findResource("src/HelloCubemap/skybox/top.jpg"),
-        findResource("src/HelloCubemap/skybox/bottom.jpg"),
-        findResource("src/HelloCubemap/skybox/front.jpg"),
-        findResource("src/HelloCubemap/skybox/back.jpg")
-    };
+        "../src/HelloCubemap/skybox/right.jpg",
+        "../src/HelloCubemap/skybox/left.jpg",
+        "../src/HelloCubemap/skybox/top.jpg",
+        "../src/HelloCubemap/skybox/bottom.jpg",
+        "../src/HelloCubemap/skybox/front.jpg",
+        "../src/HelloCubemap/skybox/back.jpg"};
 
     GLuint skyboxTexID = loadCubemap(faces);
     GLuint skyboxVAO = setupCubemap(10.0f);
 
-    glm::mat4 model = glm::mat4(1.0f);
-
-    glm::mat4 projection = glm::perspective(
-        glm::radians(45.0f),
-        (float)WIDTH / (float)HEIGHT,
-        0.1f,
-        100.0f
-    );
-
-    glm::mat4 view = camera.getViewMatrix();
-
-    // Uniforms do objeto
-    glUseProgram(shaderID);
-
-    glUniformMatrix4fv(
-        glGetUniformLocation(shaderID, "model"),
-        1,
-        GL_FALSE,
-        glm::value_ptr(model)
-    );
-
-    glUniformMatrix4fv(
-        glGetUniformLocation(shaderID, "projection"),
-        1,
-        GL_FALSE,
-        glm::value_ptr(projection)
-    );
-
-    glUniformMatrix4fv(
-        glGetUniformLocation(shaderID, "view"),
-        1,
-        GL_FALSE,
-        glm::value_ptr(view)
-    );
-
-    // Aumentei ka e kd para corrigir a aparencia escura.
-    // O enunciado nao pede uma cena escura; pede mistura entre Phong e reflexao.
-    glUniform1f(glGetUniformLocation(shaderID, "ka"), 0.35f);
-    glUniform1f(glGetUniformLocation(shaderID, "kd"), 0.75f);
-    glUniform1f(glGetUniformLocation(shaderID, "ks"), 0.80f);
-    glUniform1f(glGetUniformLocation(shaderID, "q"), 32.0f);
-    glUniform1f(glGetUniformLocation(shaderID, "reflectivity"), reflectivity);
+    // Parâmetros de iluminação
+    float ka = 0.20f;
+    float kd = 0.60f;
+    float ks = 0.80f;
+    float q = 32.0f;
 
     glm::vec3 lightPos = glm::vec3(-0.5f, 5.0f, -1.0f);
     glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
 
-    glUniform3f(
-        glGetUniformLocation(shaderID, "lightPos"),
-        lightPos.x,
-        lightPos.y,
-        lightPos.z
-    );
+    // Uniforms fixos do shader do objeto
+    glUseProgram(shaderID);
 
-    glUniform3f(
-        glGetUniformLocation(shaderID, "lightColor"),
-        lightColor.x,
-        lightColor.y,
-        lightColor.z
-    );
-
-    // Unidade 0: textura 2D da Suzanne.
-    // Unidade 1: cubemap usado na reflexao do objeto.
     glUniform1i(glGetUniformLocation(shaderID, "texBuffer"), 0);
     glUniform1i(glGetUniformLocation(shaderID, "skybox"), 1);
 
-    // Uniforms do skybox
+    glUniform1f(glGetUniformLocation(shaderID, "ka"), ka);
+    glUniform1f(glGetUniformLocation(shaderID, "kd"), kd);
+    glUniform1f(glGetUniformLocation(shaderID, "ks"), ks);
+    glUniform1f(glGetUniformLocation(shaderID, "q"), q);
+    glUniform1f(glGetUniformLocation(shaderID, "reflectivity"), reflectivity);
+
+    glUniform3f(glGetUniformLocation(shaderID, "lightPos"), lightPos.x, lightPos.y, lightPos.z);
+    glUniform3f(glGetUniformLocation(shaderID, "lightColor"), lightColor.x, lightColor.y, lightColor.z);
+
+    // Uniforms fixos do shader da skybox
     glUseProgram(skyboxShaderID);
-
-    glm::mat4 skyboxView = glm::mat4(glm::mat3(view));
-
-    glUniformMatrix4fv(
-        glGetUniformLocation(skyboxShaderID, "projection"),
-        1,
-        GL_FALSE,
-        glm::value_ptr(projection)
-    );
-
-    glUniformMatrix4fv(
-        glGetUniformLocation(skyboxShaderID, "view"),
-        1,
-        GL_FALSE,
-        glm::value_ptr(skyboxView)
-    );
-
     glUniform1i(glGetUniformLocation(skyboxShaderID, "skybox"), 0);
 
-    cout << endl;
-    cout << "Controles:" << endl;
-    cout << "W/A/S/D  -> move a camera" << endl;
-    cout << "Setas    -> rotaciona o objeto enquanto a tecla estiver pressionada" << endl;
-    cout << "P        -> alterna perspectiva/ortografica" << endl;
-    cout << "[ ou -   -> diminui refletividade" << endl;
-    cout << "] ou =   -> aumenta refletividade" << endl;
-    cout << "ESC      -> fecha" << endl;
-    cout << "Reflectivity inicial: " << reflectivity << endl;
-    cout << endl;
-
+    // Loop principal
     while (!glfwWindowShouldClose(window))
     {
-        float currentFrame = (float)glfwGetTime();
+        float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
         glfwPollEvents();
 
-        // Movimento da camera
+        // Movimento da câmera
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        {
             camera.processKeyboard("FORWARD", deltaTime);
+        }
 
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        {
             camera.processKeyboard("BACKWARD", deltaTime);
+        }
 
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        {
             camera.processKeyboard("LEFT", deltaTime);
+        }
 
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        {
             camera.processKeyboard("RIGHT", deltaTime);
+        }
 
-        // Rotacao do objeto somente enquanto a tecla estiver pressionada
-        float rotationSpeed = glm::radians(90.0f);
+        // Rotação do objeto 
+        float rotationStep = glm::radians(OBJECT_ROTATION_SPEED) * deltaTime;
 
-        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-            rotationX += rotationSpeed * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
+        {
+            objectRotationX += rotationStep;
+        }
 
-        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-            rotationX -= rotationSpeed * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS)
+        {
+            objectRotationY += rotationStep;
+        }
 
-        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-            rotationY += rotationSpeed * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS)
+        {
+            objectRotationZ += rotationStep;
+        }
 
-        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-            rotationY -= rotationSpeed * deltaTime;
+        // Limpeza dos buffers
+        glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // Atualização da projeção
         if (perspective)
         {
-            projection = glm::perspective(
-                glm::radians(45.0f),
-                (float)WIDTH / (float)HEIGHT,
-                0.1f,
-                100.0f
-            );
+            projection = glm::perspective(glm::radians(45.0f),
+                                          (float)WIDTH / (float)HEIGHT,
+                                          0.1f,
+                                          100.0f);
         }
         else
         {
-            projection = glm::ortho(
-                -3.0f,
-                3.0f,
-                -3.0f,
-                3.0f,
-                0.1f,
-                100.0f
-            );
+            projection = glm::ortho(-3.0f, 3.0f,
+                                    -3.0f, 3.0f,
+                                    0.1f, 100.0f);
         }
 
-        view = camera.getViewMatrix();
+        // Atualização da view
+        glm::mat4 view = camera.getViewMatrix();
 
+        // Atualização da model
         model = glm::mat4(1.0f);
 
-        // Mantem a Suzanne virada para a camera inicialmente.
-        model = glm::rotate(
-            model,
-            glm::radians(180.0f),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
+        // Rotação inicial para manter o objeto na orientação desejada
+        model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        model = glm::rotate(
-            model,
-            rotationX,
-            glm::vec3(1.0f, 0.0f, 0.0f)
-        );
-
-        model = glm::rotate(
-            model,
-            rotationY,
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
-
-        glClearColor(0.15f, 0.15f, 0.18f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glLineWidth(10);
-        glPointSize(10);
+        // Rotações acumuladas pelo usuário
+        model = glm::rotate(model, objectRotationX, glm::vec3(1.0f, 0.0f, 0.0f));
+        model = glm::rotate(model, objectRotationY, glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::rotate(model, objectRotationZ, glm::vec3(0.0f, 0.0f, 1.0f));
 
         // ------------------------------------------------------------
-        // 1. Desenha o objeto primeiro
+        // Desenho do objeto: Phong + reflexão da skybox
         // ------------------------------------------------------------
         glUseProgram(shaderID);
 
-        glUniformMatrix4fv(
-            glGetUniformLocation(shaderID, "model"),
-            1,
-            GL_FALSE,
-            glm::value_ptr(model)
-        );
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, glm::value_ptr(model));
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(glGetUniformLocation(shaderID, "view"), 1, GL_FALSE, glm::value_ptr(view));
 
-        glUniformMatrix4fv(
-            glGetUniformLocation(shaderID, "projection"),
-            1,
-            GL_FALSE,
-            glm::value_ptr(projection)
-        );
+        glUniform3f(glGetUniformLocation(shaderID, "cameraPos"),
+                    camera.position.x,
+                    camera.position.y,
+                    camera.position.z);
 
-        glUniformMatrix4fv(
-            glGetUniformLocation(shaderID, "view"),
-            1,
-            GL_FALSE,
-            glm::value_ptr(view)
-        );
-
-        glUniform3f(
-            glGetUniformLocation(shaderID, "cameraPos"),
-            camera.position.x,
-            camera.position.y,
-            camera.position.z
-        );
-
-        glUniform1f(
-            glGetUniformLocation(shaderID, "reflectivity"),
-            reflectivity
-        );
+        glUniform1f(glGetUniformLocation(shaderID, "reflectivity"), reflectivity);
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, mesh.texID);
+        glBindTexture(GL_TEXTURE_2D, m.texID);
 
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTexID);
 
-        glBindVertexArray(mesh.VAO);
-        glDrawArrays(GL_TRIANGLES, 0, mesh.nVertices);
+        glBindVertexArray(m.VAO);
+        glDrawArrays(GL_TRIANGLES, 0, m.nVertices);
         glBindVertexArray(0);
 
         // ------------------------------------------------------------
-        // 2. Desenha o skybox por ultimo, como fundo
+        // Desenho da skybox
         // ------------------------------------------------------------
         glDepthFunc(GL_LEQUAL);
         glDepthMask(GL_FALSE);
 
         glUseProgram(skyboxShaderID);
 
-        skyboxView = glm::mat4(glm::mat3(view));
-
-        glUniformMatrix4fv(
-            glGetUniformLocation(skyboxShaderID, "projection"),
-            1,
-            GL_FALSE,
-            glm::value_ptr(projection)
-        );
-
-        glUniformMatrix4fv(
-            glGetUniformLocation(skyboxShaderID, "view"),
-            1,
-            GL_FALSE,
-            glm::value_ptr(skyboxView)
-        );
+        glUniformMatrix4fv(glGetUniformLocation(skyboxShaderID, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix4fv(glGetUniformLocation(skyboxShaderID, "view"), 1, GL_FALSE, glm::value_ptr(view));
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTexID);
@@ -564,21 +459,16 @@ int main()
         glfwSwapBuffers(window);
     }
 
-    glDeleteVertexArrays(1, &mesh.VAO);
+    glDeleteVertexArrays(1, &m.VAO);
     glDeleteVertexArrays(1, &skyboxVAO);
-    glDeleteTextures(1, &mesh.texID);
-    glDeleteTextures(1, &skyboxTexID);
 
     glfwTerminate();
 
     return 0;
 }
 
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode)
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode)
 {
-    (void)scancode;
-    (void)mode;
-
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
     {
         glfwSetWindowShouldClose(window, GL_TRUE);
@@ -589,26 +479,32 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         perspective = !perspective;
     }
 
-    if (
-        (action == GLFW_PRESS || action == GLFW_REPEAT) &&
-        (key == GLFW_KEY_LEFT_BRACKET || key == GLFW_KEY_MINUS)
-    )
+    if (key == GLFW_KEY_UP && action == GLFW_PRESS)
     {
-        reflectivity = std::max(0.0f, reflectivity - 0.05f);
+        reflectivity += 0.05f;
+
+        if (reflectivity > 1.0f)
+        {
+            reflectivity = 1.0f;
+        }
+
         cout << "Reflectivity: " << reflectivity << endl;
     }
 
-    if (
-        (action == GLFW_PRESS || action == GLFW_REPEAT) &&
-        (key == GLFW_KEY_RIGHT_BRACKET || key == GLFW_KEY_EQUAL)
-    )
+    if (key == GLFW_KEY_DOWN && action == GLFW_PRESS)
     {
-        reflectivity = std::min(1.0f, reflectivity + 0.05f);
+        reflectivity -= 0.05f;
+
+        if (reflectivity < 0.0f)
+        {
+            reflectivity = 0.0f;
+        }
+
         cout << "Reflectivity: " << reflectivity << endl;
     }
 }
 
-GLuint setupShader(const GLchar* vshader, const GLchar* fshader)
+int setupShader(const GLchar *vshader, const GLchar *fshader)
 {
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vshader, NULL);
@@ -622,7 +518,8 @@ GLuint setupShader(const GLchar* vshader, const GLchar* fshader)
     if (!success)
     {
         glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << endl;
+        cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n"
+             << infoLog << endl;
     }
 
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -634,7 +531,8 @@ GLuint setupShader(const GLchar* vshader, const GLchar* fshader)
     if (!success)
     {
         glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << endl;
+        cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n"
+             << infoLog << endl;
     }
 
     GLuint shaderProgram = glCreateProgram();
@@ -648,7 +546,8 @@ GLuint setupShader(const GLchar* vshader, const GLchar* fshader)
     if (!success)
     {
         glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-        cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << endl;
+        cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n"
+             << infoLog << endl;
     }
 
     glDeleteShader(vertexShader);
@@ -657,110 +556,38 @@ GLuint setupShader(const GLchar* vshader, const GLchar* fshader)
     return shaderProgram;
 }
 
-struct ObjIndex
-{
-    int vi = -1;
-    int ti = -1;
-    int ni = -1;
-};
-
-ObjIndex parseObjIndex(const string& token)
-{
-    ObjIndex index;
-
-    string part;
-    stringstream ss(token);
-
-    if (getline(ss, part, '/') && !part.empty())
-    {
-        index.vi = stoi(part) - 1;
-    }
-
-    if (getline(ss, part, '/') && !part.empty())
-    {
-        index.ti = stoi(part) - 1;
-    }
-
-    if (getline(ss, part) && !part.empty())
-    {
-        index.ni = stoi(part) - 1;
-    }
-
-    return index;
-}
-
-void appendObjVertex(
-    vector<GLfloat>& vBuffer,
-    const ObjIndex& objIndex,
-    const vector<glm::vec3>& vertices,
-    const vector<glm::vec2>& texCoords,
-    const vector<glm::vec3>& normals,
-    const glm::vec3& fallbackNormal
-)
-{
-    glm::vec3 position = vertices[objIndex.vi];
-    glm::vec2 texCoord = glm::vec2(0.0f, 0.0f);
-    glm::vec3 normal = fallbackNormal;
-    glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
-
-    if (objIndex.ti >= 0 && objIndex.ti < (int)texCoords.size())
-    {
-        texCoord = texCoords[objIndex.ti];
-    }
-
-    if (objIndex.ni >= 0 && objIndex.ni < (int)normals.size())
-    {
-        normal = normals[objIndex.ni];
-    }
-
-    vBuffer.push_back(position.x);
-    vBuffer.push_back(position.y);
-    vBuffer.push_back(position.z);
-
-    vBuffer.push_back(color.r);
-    vBuffer.push_back(color.g);
-    vBuffer.push_back(color.b);
-
-    vBuffer.push_back(normal.x);
-    vBuffer.push_back(normal.y);
-    vBuffer.push_back(normal.z);
-
-    vBuffer.push_back(texCoord.s);
-    vBuffer.push_back(texCoord.t);
-}
-
-GLuint loadSimpleOBJ(string filePath, int& nVertices)
+GLuint loadSimpleOBJ(string filePATH, int &nVertices)
 {
     vector<glm::vec3> vertices;
     vector<glm::vec2> texCoords;
     vector<glm::vec3> normals;
     vector<GLfloat> vBuffer;
 
-    ifstream inputFile(filePath.c_str());
+    glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
 
-    if (!inputFile.is_open())
+    ifstream arqEntrada(filePATH.c_str());
+
+    if (!arqEntrada.is_open())
     {
-        cerr << "Erro ao tentar ler o arquivo " << filePath << endl;
+        cerr << "Erro ao tentar ler o arquivo " << filePATH << endl;
         nVertices = 0;
         return 0;
     }
 
-    cout << "Carregando OBJ: " << filePath << endl;
-
     string line;
 
-    while (getline(inputFile, line))
+    while (getline(arqEntrada, line))
     {
-        stringstream ssline(line);
+        istringstream ssline(line);
         string word;
 
         ssline >> word;
 
         if (word == "v")
         {
-            glm::vec3 vertex;
-            ssline >> vertex.x >> vertex.y >> vertex.z;
-            vertices.push_back(vertex);
+            glm::vec3 vertice;
+            ssline >> vertice.x >> vertice.y >> vertice.z;
+            vertices.push_back(vertice);
         }
         else if (word == "vt")
         {
@@ -776,70 +603,68 @@ GLuint loadSimpleOBJ(string filePath, int& nVertices)
         }
         else if (word == "f")
         {
-            vector<ObjIndex> face;
-            string token;
-
-            while (ssline >> token)
+            while (ssline >> word)
             {
-                face.push_back(parseObjIndex(token));
-            }
+                int vi = 0;
+                int ti = 0;
+                int ni = 0;
 
-            if (face.size() < 3)
-            {
-                continue;
-            }
+                istringstream ss(word);
+                string index;
 
-            // Triangulacao em fan para aceitar faces triangulares ou quadrangulares.
-            for (size_t i = 1; i + 1 < face.size(); ++i)
-            {
-                ObjIndex tri[3] = {
-                    face[0],
-                    face[i],
-                    face[i + 1]
-                };
-
-                glm::vec3 fallbackNormal = glm::vec3(0.0f, 0.0f, 1.0f);
-
-                if (tri[0].vi >= 0 && tri[1].vi >= 0 && tri[2].vi >= 0)
+                if (getline(ss, index, '/'))
                 {
-                    glm::vec3 p0 = vertices[tri[0].vi];
-                    glm::vec3 p1 = vertices[tri[1].vi];
-                    glm::vec3 p2 = vertices[tri[2].vi];
-
-                    fallbackNormal = glm::normalize(glm::cross(p1 - p0, p2 - p0));
+                    vi = !index.empty() ? stoi(index) - 1 : 0;
                 }
 
-                appendObjVertex(
-                    vBuffer,
-                    tri[0],
-                    vertices,
-                    texCoords,
-                    normals,
-                    fallbackNormal
-                );
+                if (getline(ss, index, '/'))
+                {
+                    ti = !index.empty() ? stoi(index) - 1 : 0;
+                }
 
-                appendObjVertex(
-                    vBuffer,
-                    tri[1],
-                    vertices,
-                    texCoords,
-                    normals,
-                    fallbackNormal
-                );
+                if (getline(ss, index))
+                {
+                    ni = !index.empty() ? stoi(index) - 1 : 0;
+                }
 
-                appendObjVertex(
-                    vBuffer,
-                    tri[2],
-                    vertices,
-                    texCoords,
-                    normals,
-                    fallbackNormal
-                );
+                if (vi < 0 || vi >= (int)vertices.size())
+                {
+                    continue;
+                }
+
+                glm::vec3 vertex = vertices[vi];
+                glm::vec2 texCoord = glm::vec2(0.0f, 0.0f);
+                glm::vec3 normal = glm::vec3(0.0f, 1.0f, 0.0f);
+
+                if (ti >= 0 && ti < (int)texCoords.size())
+                {
+                    texCoord = texCoords[ti];
+                }
+
+                if (ni >= 0 && ni < (int)normals.size())
+                {
+                    normal = normals[ni];
+                }
+
+                vBuffer.push_back(vertex.x);
+                vBuffer.push_back(vertex.y);
+                vBuffer.push_back(vertex.z);
+
+                vBuffer.push_back(color.r);
+                vBuffer.push_back(color.g);
+                vBuffer.push_back(color.b);
+
+                vBuffer.push_back(normal.x);
+                vBuffer.push_back(normal.y);
+                vBuffer.push_back(normal.z);
+
+                vBuffer.push_back(texCoord.s);
+                vBuffer.push_back(texCoord.t);
             }
         }
     }
 
-    inputFile.close();
+    arqEntrada.close();
 
     cout << "Gerando o buffer de geometria..." << endl;
 
@@ -848,72 +673,36 @@ GLuint loadSimpleOBJ(string filePath, int& nVertices)
 
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        vBuffer.size() * sizeof(GLfloat),
-        vBuffer.data(),
-        GL_STATIC_DRAW
-    );
+    glBufferData(GL_ARRAY_BUFFER, vBuffer.size() * sizeof(GLfloat), vBuffer.data(), GL_STATIC_DRAW);
 
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
 
-    // position
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        11 * sizeof(GLfloat),
-        (GLvoid*)0
-    );
+    // Atributo 0: posição
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid *)0);
     glEnableVertexAttribArray(0);
 
-    // color
-    glVertexAttribPointer(
-        1,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        11 * sizeof(GLfloat),
-        (GLvoid*)(3 * sizeof(GLfloat))
-    );
+    // Atributo 1: cor
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid *)(3 * sizeof(GLfloat)));
     glEnableVertexAttribArray(1);
 
-    // normal
-    glVertexAttribPointer(
-        2,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        11 * sizeof(GLfloat),
-        (GLvoid*)(6 * sizeof(GLfloat))
-    );
+    // Atributo 2: normal
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid *)(6 * sizeof(GLfloat)));
     glEnableVertexAttribArray(2);
 
-    // texcoord
-    glVertexAttribPointer(
-        3,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        11 * sizeof(GLfloat),
-        (GLvoid*)(9 * sizeof(GLfloat))
-    );
+    // Atributo 3: coordenada de textura
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid *)(9 * sizeof(GLfloat)));
     glEnableVertexAttribArray(3);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    nVertices = (int)vBuffer.size() / 11;
-
-    cout << "Vertices carregados: " << nVertices << endl;
+    nVertices = vBuffer.size() / 11;
 
     return VAO;
 }
 
-GLuint loadTexture(string filePath, int& imgWidth, int& imgHeight)
+GLuint loadTexture(string filePath, int &imgWidth, int &imgHeight)
 {
     GLuint texID;
 
@@ -930,15 +719,7 @@ GLuint loadTexture(string filePath, int& imgWidth, int& imgHeight)
     int height;
     int nrChannels;
 
-    stbi_set_flip_vertically_on_load(false);
-
-    unsigned char* data = stbi_load(
-        filePath.c_str(),
-        &width,
-        &height,
-        &nrChannels,
-        0
-    );
+    unsigned char *data = stbi_load(filePath.c_str(), &width, &height, &nrChannels, 0);
 
     if (data)
     {
@@ -957,17 +738,15 @@ GLuint loadTexture(string filePath, int& imgWidth, int& imgHeight)
             format = GL_RGBA;
         }
 
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            format,
-            width,
-            height,
-            0,
-            format,
-            GL_UNSIGNED_BYTE,
-            data
-        );
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     format,
+                     width,
+                     height,
+                     0,
+                     format,
+                     GL_UNSIGNED_BYTE,
+                     data);
 
         glGenerateMipmap(GL_TEXTURE_2D);
 
@@ -977,19 +756,14 @@ GLuint loadTexture(string filePath, int& imgWidth, int& imgHeight)
         stbi_image_free(data);
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        cout << "Textura carregada: " << filePath << endl;
-
         return texID;
     }
 
     cout << "Failed to load texture: " << filePath << endl;
 
-    imgWidth = 0;
-    imgHeight = 0;
-
     stbi_image_free(data);
 
-    return texID;
+    return 0;
 }
 
 GLuint loadCubemap(vector<string> faces)
@@ -999,21 +773,13 @@ GLuint loadCubemap(vector<string> faces)
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
 
-    stbi_set_flip_vertically_on_load(false);
-
     int width;
     int height;
     int nrChannels;
 
     for (unsigned int i = 0; i < faces.size(); i++)
     {
-        unsigned char* data = stbi_load(
-            faces[i].c_str(),
-            &width,
-            &height,
-            &nrChannels,
-            0
-        );
+        unsigned char *data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
 
         if (data)
         {
@@ -1032,25 +798,21 @@ GLuint loadCubemap(vector<string> faces)
                 format = GL_RGBA;
             }
 
-            glTexImage2D(
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-                0,
-                format,
-                width,
-                height,
-                0,
-                format,
-                GL_UNSIGNED_BYTE,
-                data
-            );
-
-            cout << "Face do cubemap carregada: " << faces[i] << endl;
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                         0,
+                         format,
+                         width,
+                         height,
+                         0,
+                         format,
+                         GL_UNSIGNED_BYTE,
+                         data);
 
             stbi_image_free(data);
         }
         else
         {
-            cout << "Cubemap tex failed to load at path: " << faces[i] << endl;
+            cout << "Cubemap texture failed to load at path: " << faces[i] << endl;
             stbi_image_free(data);
         }
     }
@@ -1069,48 +831,47 @@ GLuint setupCubemap(float scaleFactor)
 {
     float skyboxVertices[] = {
         // positions
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
         scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
 
-        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
+        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
         scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
 
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
 
-        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
-        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
+        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
+        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
 
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor *  0.5f,
-        scaleFactor * -0.5f, scaleFactor *  0.5f, scaleFactor * -0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * 0.5f,
+        scaleFactor * -0.5f, scaleFactor * 0.5f, scaleFactor * -0.5f,
 
         scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
-        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f,
-        scaleFactor *  0.5f, scaleFactor * -0.5f, scaleFactor *  0.5f
-    };
+        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * -0.5f,
+        scaleFactor * -0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f,
+        scaleFactor * 0.5f, scaleFactor * -0.5f, scaleFactor * 0.5f};
 
     GLuint skyboxVAO;
     GLuint skyboxVBO;
@@ -1121,60 +882,13 @@ GLuint setupCubemap(float scaleFactor)
     glBindVertexArray(skyboxVAO);
 
     glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
-
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(skyboxVertices),
-        skyboxVertices,
-        GL_STATIC_DRAW
-    );
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), skyboxVertices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        3 * sizeof(float),
-        (void*)0
-    );
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
     return skyboxVAO;
-}
-
-bool fileExists(const string& filePath)
-{
-    ifstream file(filePath.c_str());
-    return file.good();
-}
-
-string findResource(const string& relativePath)
-{
-    vector<string> prefixes = {
-        "",
-        "../",
-        "../../",
-        "../../../",
-        "../../../../",
-        "../../../../../"
-    };
-
-    for (const string& prefix : prefixes)
-    {
-        string candidate = prefix + relativePath;
-
-        if (fileExists(candidate))
-        {
-            return candidate;
-        }
-    }
-
-    cerr << "ERRO: recurso nao encontrado: " << relativePath << endl;
-    cerr << "Verifique se voce esta executando a partir da raiz do projeto ou da pasta build." << endl;
-
-    return relativePath;
 }

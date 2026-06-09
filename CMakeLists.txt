@@ -50,7 +50,7 @@ set(EXERCISES
     HelloPhong
     HelloCubemap
     HelloCurves
-    # TrabalhoGrauA
+    Skybox_LuisaBecker
 )
 
 add_compile_options(-Wno-pragmas)
